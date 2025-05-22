@@ -38,6 +38,7 @@ const unsigned char no_signal [] PROGMEM = {
 Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 int signal;
 SoftwareSerial mySerial(3, 2);  //SIM800L Tx & Rx is connected to Arduino #3 & #2
+
 int hangup_pin = 4;
 bool lastHangupState = LOW; // este LOW cand se ridica receptorul
 
@@ -55,6 +56,7 @@ String simTime = "";
 
 bool inCall = false;
 
+<<<<<<< Updated upstream
 unsigned int lastClockUpdate = 0;
 const unsigned int clockInterval = 1800000UL;
 // unsigned long lastBlinkTime = 0;
@@ -64,6 +66,16 @@ void setup() {
 
   Serial.begin(115200);
   delay(500);
+=======
+// --- CLOCK variables ---
+String simDate = "";
+String simTime = "";
+unsigned long lastClockUpdate = 0;
+const unsigned long clockInterval = 1800000UL; // 30 minutes
+
+void setup() {
+  Serial.begin(9600);
+>>>>>>> Stashed changes
   mySerial.begin(9600);
   Wire.begin();
   delay(500);
@@ -71,6 +83,7 @@ void setup() {
   pinMode(enable_dial_pin, INPUT_PULLUP);
   pinMode(dial_pin, INPUT_PULLUP);
 
+<<<<<<< Updated upstream
   display.begin(I2C_ADDRESS, true);
 
   delay(500);
@@ -78,29 +91,63 @@ void setup() {
   display.clearDisplay();
   display.setTextColor(SH110X_WHITE);
   drawDialingInterface();
+=======
+  delay(1000);
+>>>>>>> Stashed changes
 
   // Serial.println("adasdad");
   mySerial.println("AT");
+<<<<<<< Updated upstream
+=======
+  updateSerial();
+
+  getClock();  // Initial clock fetch at startup
+  drawClock(); // Show initial time
+}
+
+void loop() {
+  updateSerial();
+
+  // Update clock every 30 minutes
+  if (millis() - lastClockUpdate >= clockInterval || lastClockUpdate == 0) {
+    getClock();
+    drawClock();
+    lastClockUpdate = millis();
+  }
+
+  int hangupState = digitalRead(hangup_pin);
+  if (hangupState == LOW) {
+    analyze_input();
+    if (numbers_typed == 10) {
+      call_number();
+    }
+  } else {
+    if (inCall) {
+      mySerial.println("ATH");
+      inCall = false;
+    }
+  }
+
+  lastHangupState = hangupState;
+>>>>>>> Stashed changes
 }
 
 void count_pin_changes() {
-    int state = digitalRead(dial_pin);
-    if (state == HIGH && lastDialState == LOW) {
-        pin_changes++;
-    }
-    lastDialState = state;
+  int state = digitalRead(dial_pin);
+  if (state == HIGH && lastDialState == LOW) {
+    pin_changes++;
+  }
+  lastDialState = state;
 }
 
 
 void analyze_input() {
-  //ENABLE DIAL = HIGH DACA ROTITA A AJUNS LA FINAL / NU SE MISCA
-  // LOW DACA ROTITA E IN MISCARE
   int enableDial = digitalRead(enable_dial_pin);
-  // Serial.println(enableDial);
   if (enableDial == LOW) {
     count_pin_changes();
     lastEnableDialState = LOW;
     delay(1);
+<<<<<<< Updated upstream
   } else if (lastEnableDialState == LOW  && enableDial == HIGH) {
     //rotita a ajuns la final
     // Serial.print("Rotita a ajuns la final ");
@@ -118,6 +165,15 @@ void analyze_input() {
         drawDialingInterface();
       }
       pin_changes = 0;
+=======
+  } else if (lastEnableDialState == LOW && enableDial == HIGH) {
+    Serial.print("Rotita a ajuns la final ");
+    Serial.println(pin_changes);
+    lastEnableDialState = HIGH;
+    if (pin_changes != 0) {
+      if (pin_changes == 10) {
+        pin_changes = 0;
+>>>>>>> Stashed changes
       }
   }
 }
@@ -127,8 +183,13 @@ void call_number() {
     // Serial.println("Calling phone number: ");
     String phoneNumber = "ATD+4";
     for (int i = 0; i < numbers_typed; i++) {
+<<<<<<< Updated upstream
       phoneNumber += numbers[i]; 
       // Serial.print(numbers[i]);
+=======
+      phoneNumber += String(numbers[i]);
+      Serial.print(numbers[i]);
+>>>>>>> Stashed changes
     }
     phoneNumber += ";";
     // Serial.println(phoneNumber);
@@ -141,6 +202,7 @@ void call_number() {
   numbers_typed = 0;
 }
 
+<<<<<<< Updated upstream
 void loop() {
   int hangupState = digitalRead(hangup_pin);
   if (hangupState == LOW) {
@@ -232,3 +294,48 @@ void drawDialingInterface() {
 void mainInterface() {
 
 }
+=======
+void updateSerial() {
+  while (Serial.available()) {
+    mySerial.write(Serial.read());
+  }
+  while (mySerial.available()) {
+    Serial.write(mySerial.read());
+  }
+}
+
+// --- CLOCK Functions ---
+
+void getClock() {
+  mySerial.println("AT+CCLK?");
+  delay(200);
+  String response = "";
+  unsigned long timeout = millis() + 2000;
+
+  while (millis() < timeout) {
+    while (mySerial.available()) {
+      char c = mySerial.read();
+      response += c;
+    }
+  }
+
+  int indexStart = response.indexOf("\"");
+  int indexEnd = response.indexOf("\"", indexStart + 1);
+
+  if (indexStart != -1 && indexEnd != -1) {
+    String dateTime = response.substring(indexStart + 1, indexEnd);
+    int commaIndex = dateTime.indexOf(",");
+    if (commaIndex != -1) {
+      simDate = dateTime.substring(0, commaIndex);
+      simTime = dateTime.substring(commaIndex + 1);
+    }
+  }
+}
+
+void drawClock() {
+  Serial.print("SIM Clock: ");
+  Serial.print(simDate);
+  Serial.print(" ");
+  Serial.println(simTime);
+}
+>>>>>>> Stashed changes

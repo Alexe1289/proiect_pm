@@ -54,17 +54,13 @@ int pin_changes = 0;
 int numbers_typed = 0;
 char numbers[11] = {};
 
+int buzzerPin = 8;
 bool inCall = false;
 bool noNetwork = true;
 bool incCall = false;
 
-// unsigned long lastBlinkTime = 0;
-// bool showIcon = true;
 
 void setup() {
-
-  // Serial.begin(115200);
-  // delay(500);
   mySerial.begin(9600);
   Wire.begin();
   delay(500);
@@ -72,17 +68,15 @@ void setup() {
   pinMode(enable_dial_pin, INPUT_PULLUP);
   pinMode(dial_pin, INPUT_PULLUP);
   pinMode(ring_pin, INPUT_PULLUP);
+  pinMode(buzzerPin, OUTPUT);
+  digitalWrite(buzzerPin, LOW);
 
   display.begin(I2C_ADDRESS, true);
 
   delay(500);
-  // Serial.println("sadsa");
   display.clearDisplay();
   display.setTextColor(SH110X_WHITE);
-  // drawDialingInterface();
-
-  // Serial.println("adasdad");
-  // mySerial.println("AT");
+  mySerial.println("AT");
 }
 
 void count_pin_changes() {
@@ -95,18 +89,13 @@ void count_pin_changes() {
 
 
 void analyze_input() {
-  //ENABLE DIAL = HIGH DACA ROTITA A AJUNS LA FINAL / NU SE MISCA
-  // LOW DACA ROTITA E IN MISCARE
   int enableDial = digitalRead(enable_dial_pin);
-  // Serial.println(enableDial);
   if (enableDial == LOW) {
     count_pin_changes();
     lastEnableDialState = LOW;
     delay(1);
   } else if (lastEnableDialState == LOW  && enableDial == HIGH) {
     //rotita a ajuns la final
-    // Serial.print("Rotita a ajuns la final ");
-    // Serial.println(pin_changes);
     lastEnableDialState = HIGH;
     // daca am avut 0 pin_changes, cifra invalida
     if (numbers_typed < 11) {
@@ -114,7 +103,6 @@ void analyze_input() {
         if (pin_changes == 10) { // 10 semnale = cifra 0
           pin_changes = 0;
         }
-        // Serial.println("Adasda");
         numbers[numbers_typed] = pin_changes + '0';
         numbers_typed++;
         drawDialingInterface();
@@ -126,14 +114,11 @@ void analyze_input() {
 
 void call_number() {
   if (numbers[0] == '0' && numbers[1] == '7') {
-    // Serial.println("Calling phone number: ");
     String phoneNumber = "ATD+4";
     for (int i = 0; i < numbers_typed; i++) {
       phoneNumber += numbers[i]; 
-      // Serial.print(numbers[i]);
     }
     phoneNumber += ";";
-    // Serial.println(phoneNumber);
     mySerial.println(phoneNumber);
     inCall = true;
     delay(1000);
@@ -175,7 +160,6 @@ void loop() {
       mainInterface();
   }
   lastHangupState = hangupState;
-  // display.clearDisplay();
 }
 
 void drawDialingInterface() {
@@ -184,7 +168,6 @@ void drawDialingInterface() {
   display.setCursor(0, 15);
   display.println("Dialing:");
 
-  // Display the digits
   display.setTextSize(2);
   int spacing = 11;
   int totalWidth = spacing * numbers_typed;
@@ -195,7 +178,6 @@ void drawDialingInterface() {
     display.print(numbers[i]);
   }
 
-  // If all digits entered, show "Calling..." and icon
   if (numbers_typed == 10) {
     display.setTextSize(1);
     display.setCursor(20, 50);
@@ -214,7 +196,14 @@ void incomingCall() {
   display.setCursor(10, 45);
   display.println("Incoming!");
   display.display();
+  for (int i = 0; i < 3; i++) {
+    tone(buzzerPin, 1000);
+    delay(100);
+    noTone(buzzerPin);
+    delay(100);
+  }
 }
+
 void mainInterface() {
   // Request signal quality
   mySerial.println("AT+CSQ");

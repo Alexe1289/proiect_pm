@@ -1,3 +1,5 @@
+#include <util/delay.h>
+#include <usart.c>
 #include <SoftwareSerial.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
@@ -8,7 +10,15 @@
 #define OLED_RESET -1
 #define I2C_ADDRESS 0x3C
 
-//16x15 size
+#define HANGUP_PIN PD4
+#define ENABLE_DIAL_PIN PD5
+#define DIAL_PIN PD6
+#define RING_PIN PD7
+#define BUZZER_PIN PB0
+
+#define RX_PIN PD2
+#define TX_PIN PD3
+
 const unsigned char calling_symbol [] PROGMEM = {
 	0x01, 0x80, 0x38, 0x30, 0x7c, 0x08, 0x7c, 0x64, 0xfc, 0x12, 0xf8, 0x0a, 0x78, 0x08, 0x7c, 0x01, 
 	0x3e, 0x01, 0x1f, 0x00, 0x0f, 0x9c, 0x07, 0xfe, 0x03, 0xfe, 0x01, 0xfe, 0x00, 0xfc, 0x00, 0x30
@@ -35,132 +45,21 @@ const unsigned char no_signal [] PROGMEM = {
 	0x06, 0x80, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00
 };
 
+SoftwareSerial mySerial =  SoftwareSerial(TX_PIN, RX_PIN);
 Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 int signal;
-SoftwareSerial mySerial(3, 2);  //SIM800L Tx & Rx is connected to Arduino #3 & #2
-int hangup_pin = 4;
-bool lastHangupState = LOW; // este LOW cand se ridica receptorul
-
-int enable_dial_pin = 5;
-bool lastEnableDialState = HIGH; //cand nu se misca rotia este pe HIGH
-
-int dial_pin = 6;
-bool lastDialState = LOW; //cand se formeaza numarul este pe LOW la inceput
-
-int ring_pin = 7;
-bool lastRingState = HIGH;
+bool lastHangupState = false;
+bool lastEnableDialState = true;
+bool lastDialState = false;
+bool lastRingState = true;
 
 int pin_changes = 0;
 int numbers_typed = 0;
 char numbers[11] = {};
 
-int buzzerPin = 8;
 bool inCall = false;
 bool noNetwork = true;
 bool incCall = false;
-
-
-void setup() {
-  mySerial.begin(9600);
-  Wire.begin();
-  delay(500);
-  pinMode(hangup_pin, INPUT_PULLUP);
-  pinMode(enable_dial_pin, INPUT_PULLUP);
-  pinMode(dial_pin, INPUT_PULLUP);
-  pinMode(ring_pin, INPUT_PULLUP);
-  pinMode(buzzerPin, OUTPUT);
-  digitalWrite(buzzerPin, LOW);
-
-  display.begin(I2C_ADDRESS, true);
-
-  delay(500);
-  display.clearDisplay();
-  display.setTextColor(SH110X_WHITE);
-  mySerial.println("AT");
-}
-
-void count_pin_changes() {
-    int state = digitalRead(dial_pin);
-    if (state == HIGH && lastDialState == LOW) {
-        pin_changes++;
-    }
-    lastDialState = state;
-}
-
-
-void analyze_input() {
-  int enableDial = digitalRead(enable_dial_pin);
-  if (enableDial == LOW) {
-    count_pin_changes();
-    lastEnableDialState = LOW;
-    delay(1);
-  } else if (lastEnableDialState == LOW  && enableDial == HIGH) {
-    //rotita a ajuns la final
-    lastEnableDialState = HIGH;
-    // daca am avut 0 pin_changes, cifra invalida
-    if (numbers_typed < 11) {
-      if (pin_changes != 0) {
-        if (pin_changes == 10) { // 10 semnale = cifra 0
-          pin_changes = 0;
-        }
-        numbers[numbers_typed] = pin_changes + '0';
-        numbers_typed++;
-        drawDialingInterface();
-      }
-      pin_changes = 0;
-      }
-  }
-}
-
-void call_number() {
-  if (numbers[0] == '0' && numbers[1] == '7') {
-    String phoneNumber = "ATD+4";
-    for (int i = 0; i < numbers_typed; i++) {
-      phoneNumber += numbers[i]; 
-    }
-    phoneNumber += ";";
-    mySerial.println(phoneNumber);
-    inCall = true;
-    delay(1000);
-  } else {
-    // Serial.println("Invalid NUMBER!");
-  }
-  numbers_typed = 0;
-}
-
-void loop() {
-  int hangupState = digitalRead(hangup_pin);
-  int ring_val = digitalRead(ring_pin);
-  if (ring_val == LOW && lastRingState != ring_pin) {
-    incomingCall();
-    lastRingState = ring_val;
-    incCall = true;
-  } else if (ring_val == HIGH && lastRingState != ring_pin) {
-    incCall = false;
-  }
-  if (hangupState == LOW && !noNetwork) {
-    // daca receptorul nu a fost pus jos
-      if (!incCall) {
-        analyze_input();
-        if (numbers_typed == 10) {
-          call_number();
-        }
-      } else {
-        mySerial.println("ATA");
-        inCall = true;
-      }
-  } else {
-    //se inchide telefonul cand receptorul e jos
-    if (inCall) {
-      mySerial.println("ATH");
-      inCall = false;
-    }
-    numbers_typed = 0;
-    if (!incCall)
-      mainInterface();
-  }
-  lastHangupState = hangupState;
-}
 
 void drawDialingInterface() {
   display.clearDisplay();
@@ -188,6 +87,52 @@ void drawDialingInterface() {
   display.display();
 }
 
+void count_pin_changes() {
+  int state = (PIND & (1 << DIAL_PIN)) ? true : false;
+  if (state == true && lastDialState == false) {
+    pin_changes++;
+  }
+  lastDialState = state;
+}
+
+void analyze_input() {
+  int enableDial = (PIND & (1 << ENABLE_DIAL_PIN)) ? true : false;
+  if (enableDial == false) {
+    count_pin_changes();
+    lastEnableDialState = false;
+    _delay_ms(1);
+  } else if (lastEnableDialState == false && enableDial == true) {
+    lastEnableDialState = true;
+    if (numbers_typed < 11) {
+      if (pin_changes != 0) {
+        if (pin_changes == 10) {
+          pin_changes = 0;
+        }
+        numbers[numbers_typed] = pin_changes + '0';
+        numbers_typed++;
+        drawDialingInterface();
+      }
+      pin_changes = 0;
+    }
+  }
+}
+
+void call_number() {
+  if (numbers[0] == '0' && numbers[1] == '7') {
+    String phoneNumber = "ATD+4";
+    for (int i = 0; i < numbers_typed; i++) {
+      phoneNumber += numbers[i];
+    }
+    phoneNumber += ";";
+    mySerial.println(phoneNumber);
+    inCall = true;
+    _delay_ms(1000);
+  }
+  numbers_typed = 0;
+}
+
+
+
 void incomingCall() {
   display.clearDisplay();
   display.setTextSize(2);
@@ -197,17 +142,17 @@ void incomingCall() {
   display.println("Incoming!");
   display.display();
   for (int i = 0; i < 3; i++) {
-    tone(buzzerPin, 1000);
-    delay(100);
-    noTone(buzzerPin);
-    delay(100);
+    tone(BUZZER_PIN, 1000);
+    _delay_ms(100);
+    noTone(BUZZER_PIN);
+    _delay_ms(100);
   }
 }
 
 void mainInterface() {
   // Request signal quality
   mySerial.println("AT+CSQ");
-  delay(300);
+  _delay_ms(300);
   String csqResponse = "";
   while (mySerial.available()) {
     char c = mySerial.read();
@@ -227,7 +172,7 @@ void mainInterface() {
 
   // Request network registration status
   mySerial.println("AT+CREG?");
-  delay(300);
+  _delay_ms(300);
   String cregResponse = "";
   while (mySerial.available()) {
     char c = mySerial.read();
@@ -268,4 +213,26 @@ void mainInterface() {
   }
 
   display.display();
+}
+
+int main()
+{
+    mySerial.begin(9600);
+    Wire.begin();
+    _delay_ms(500);
+    DDRD &= ~((1 << HANGUP_PIN) | (1 << ENABLE_DIAL_PIN) | (1 << DIAL_PIN) | (1 << RING_PIN));
+    PORTD |= (1 << HANGUP_PIN) | (1 << ENABLE_DIAL_PIN) | (1 << DIAL_PIN) | (1 << RING_PIN);
+
+    DDRB |= (1 << BUZZER_PIN);
+    PORTB &= ~(1 << BUZZER_PIN);
+    display.begin(I2C_ADDRESS, true);
+    delay(500);
+    display.clearDisplay();
+    display.setTextColor(SH110X_WHITE);
+    mySerial.println("AT");
+
+    while(true) {
+
+    }
+    return 0;
 }

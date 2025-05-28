@@ -48,9 +48,9 @@ const unsigned char no_signal [] PROGMEM = {
 SoftwareSerial mySerial =  SoftwareSerial(TX_PIN, RX_PIN);
 Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 int signal;
-bool lastHangupState = false;
-bool lastEnableDialState = true;
-bool lastDialState = false;
+bool lastHangupState = false; // este LOW cand se ridica receptorul
+bool lastEnableDialState = true; //cand nu se misca rotia este pe HIGH
+bool lastDialState = false; //cand se formeaza numarul este pe LOW la inceput
 bool lastRingState = true;
 
 int pin_changes = 0;
@@ -102,10 +102,12 @@ void analyze_input() {
     lastEnableDialState = false;
     _delay_ms(1);
   } else if (lastEnableDialState == false && enableDial == true) {
+    //rotita a ajuns la final
     lastEnableDialState = true;
+    // daca am avut 0 pin_changes, cifra invalida
     if (numbers_typed < 11) {
       if (pin_changes != 0) {
-        if (pin_changes == 10) {
+        if (pin_changes == 10) { // 10 semnale = cifra 0
           pin_changes = 0;
         }
         numbers[numbers_typed] = pin_changes + '0';
@@ -232,7 +234,39 @@ int main()
     mySerial.println("AT");
 
     while(true) {
+      int hangupState = (PIND & (1 << HANGUP_PIN)) ? true : false;
+      int ring_val = (PIND & (1 << RING_PIN)) ? true : false;
 
+      if (ring_val == false && lastRingState != ring_val) {
+        incomingCall();
+        lastRingState = ring_val;
+        incCall = true;
+      } else if (ring_val == HIGH && lastRingState != ring_val) {
+        incCall = false;
+      }
+      if (hangupState == false && !noNetwork) {
+        // daca receptorul nu a fost pus jos
+        if (!incCall) {
+          analyze_input();
+          if (numbers_typed == 10) {
+            call_number();
+          }
+        } else {
+          mySerial.println("ATA");
+          inCall = true;
+        }
+      } else {
+        //se inchide telefonul cand receptorul e jos
+        if (inCall) {
+          mySerial.println("ATH");
+          inCall = false;
+        }
+        numbers_typed = 0;
+        if (!incCall)
+          mainInterface();
+      }
+
+      lastHangupState = hangupState;
     }
     return 0;
 }
